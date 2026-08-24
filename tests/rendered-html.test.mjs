@@ -16,6 +16,8 @@ test("renders the sutra writing experience", async () => {
   const html = await response.text();
   assert.match(html, /一字一念/);
   assert.match(html, /金剛般若/);
+  assert.match(html, /般若波羅蜜多心經/);
+  assert.match(html, /正文[\s\S]{0,24}260[\s\S]{0,24}字/);
   assert.match(html, /開始抄寫/);
   assert.match(html, /所有進度僅保存在本機/);
   assert.doesNotMatch(html, /codex-preview/);

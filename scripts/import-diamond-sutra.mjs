@@ -111,6 +111,7 @@ const data = {
   shortTitle: "金剛經",
   translator: "姚秦·鳩摩羅什譯",
   script: "繁體",
+  sectionUnit: "品",
   source: {
     label: "CBETA《大正新脩大藏經》T08 No. 235",
     url: "https://cbetaonline.dila.edu.tw/zh/T0235_001",

@@ -1,4 +1,5 @@
 import diamondSutraData from "@/app/data/diamond-sutra.json";
+import heartSutraData from "@/app/data/heart-sutra.json";
 
 export type SutraSection = {
   id: number;
@@ -15,22 +16,61 @@ export type Sutra = {
   shortTitle: string;
   translator: string;
   script: string;
+  sectionUnit: string;
+  source: {
+    label: string;
+    url: string;
+    xmlUrl: string;
+    xmlRevision: string;
+    xmlSha256: string;
+    normalizedHanSha256: string;
+  };
   characterCount: number;
   sections: SutraSection[];
 };
 
 export const diamondSutra = diamondSutraData satisfies Sutra;
-export const diamondSutraCharacters = diamondSutra.sections.flatMap((section) =>
-  Array.from(section.text).filter((character) => /[\u3400-\u9fff]/u.test(character)),
-);
+export const heartSutra = heartSutraData satisfies Sutra;
+export const sutras = [diamondSutra, heartSutra] satisfies Sutra[];
 
-export function getSectionAt(index: number) {
-  return (
-    diamondSutra.sections.find(
-      (section) => index >= section.startIndex && index < section.endIndex,
-    ) ?? diamondSutra.sections.at(-1)!
+export function getSutraCharacters(sutra: Sutra) {
+  return sutra.sections.flatMap((section) =>
+    Array.from(section.text).filter((character) => /[\u3400-\u9fff]/u.test(character)),
   );
 }
+
+export const diamondSutraCharacters = getSutraCharacters(diamondSutra);
+export const heartSutraCharacters = getSutraCharacters(heartSutra);
+
+export function getSectionAt(sutra: Sutra, index: number) {
+  return (
+    sutra.sections.find(
+      (section) => index >= section.startIndex && index < section.endIndex,
+    ) ?? sutra.sections.at(-1)!
+  );
+}
+
+export function getSectionLabel(sutra: Sutra, section: SutraSection) {
+  if (sutra.sections.length === 1) return `全${sutra.sectionUnit}`;
+  return `第${section.id}${sutra.sectionUnit}`;
+}
+
+export function getCompletedSectionCount(
+  sutra: Sutra,
+  completedIndices: ReadonlySet<number>,
+) {
+  return sutra.sections.filter((section) => {
+    for (let index = section.startIndex; index < section.endIndex; index += 1) {
+      if (!completedIndices.has(index)) return false;
+    }
+    return true;
+  }).length;
+}
+
+/* Retained as named exports for scripts and tests that inspect individual texts. */
+export const allSutraCharacters = sutras.flatMap((sutra) =>
+  getSutraCharacters(sutra),
+);
 
 export function getSectionStatus(
   section: SutraSection,

@@ -13,17 +13,17 @@ const expectedTitles = [
   "威儀寂靜分", "一合理相分", "知見不生分", "應化非真分",
 ];
 const expectedHanSha256 = "76977fc3818065de90368debe714f556a5430733db4da02ee69e77c7f4606ea7";
-const data = JSON.parse(
+const diamondData = JSON.parse(
   await readFile(path.join(process.cwd(), "app/data/diamond-sutra.json"), "utf8"),
 );
 
-if (data.sections.length !== 32) throw new Error("Expected exactly 32 sections.");
-if (data.sections.map((section) => section.title).join("|") !== expectedTitles.join("|")) {
+if (diamondData.sections.length !== 32) throw new Error("Expected exactly 32 sections.");
+if (diamondData.sections.map((section) => section.title).join("|") !== expectedTitles.join("|")) {
   throw new Error("The 32 section titles have changed.");
 }
 
 let expectedStart = 0;
-for (const section of data.sections) {
+for (const section of diamondData.sections) {
   const count = Array.from(section.text).filter((character) => /[\u3400-\u9fff]/u.test(character)).length;
   if (section.startIndex !== expectedStart || section.endIndex !== expectedStart + count) {
     throw new Error(`Invalid character offsets in section ${section.id}.`);
@@ -34,14 +34,14 @@ for (const section of data.sections) {
   expectedStart += count;
 }
 
-if (expectedStart !== 5129 || data.characterCount !== 5129) {
+if (expectedStart !== 5129 || diamondData.characterCount !== 5129) {
   throw new Error("The canonical Han-character count must remain 5,129.");
 }
 
-const fullText = data.sections.map((section) => section.text).join("");
+const fullText = diamondData.sections.map((section) => section.text).join("");
 const normalizedHan = fullText.replace(/[^\u3400-\u9fff]/gu, "");
 const digest = createHash("sha256").update(normalizedHan).digest("hex");
-if (digest !== expectedHanSha256 || digest !== data.source.normalizedHanSha256) {
+if (digest !== expectedHanSha256 || digest !== diamondData.source.normalizedHanSha256) {
   throw new Error("The scripture text differs from the verified CBETA import.");
 }
 
@@ -49,4 +49,34 @@ if (!fullText.includes("著衣持鉢") || !fullText.endsWith("皆大歡喜，信
   throw new Error("Canonical opening or closing phrases are missing.");
 }
 
+const expectedHeartHanSha256 = "02c4027a60b4bd1f30dae691962b6b3323c9d911f10712dcda99bdc317d172d1";
+const heartData = JSON.parse(
+  await readFile(path.join(process.cwd(), "app/data/heart-sutra.json"), "utf8"),
+);
+if (heartData.sections.length !== 1 || heartData.sections[0].title !== "般若波羅蜜多心經") {
+  throw new Error("The Heart Sutra must remain one canonical volume.");
+}
+
+const heartText = heartData.sections[0].text;
+const normalizedHeartHan = heartText.replace(/[^\u3400-\u9fff]/gu, "");
+const heartDigest = createHash("sha256").update(normalizedHeartHan).digest("hex");
+if (
+  heartData.characterCount !== 260
+  || heartData.sections[0].characterCount !== 260
+  || heartData.sections[0].startIndex !== 0
+  || heartData.sections[0].endIndex !== 260
+) {
+  throw new Error("The canonical Heart Sutra Han-character count must remain 260.");
+}
+if (heartDigest !== expectedHeartHanSha256 || heartDigest !== heartData.source.normalizedHanSha256) {
+  throw new Error("The Heart Sutra text differs from the verified CBETA import.");
+}
+if (
+  !heartText.startsWith("觀自在菩薩行深般若波羅蜜多時")
+  || !heartText.endsWith("揭帝揭帝般羅揭帝般羅僧揭帝菩提莎婆訶」")
+) {
+  throw new Error("Canonical Heart Sutra opening or mantra is missing.");
+}
+
 console.log("Verified CBETA T08 No. 235: 32 sections, 5,129 Han characters.");
+console.log("Verified CBETA T08 No. 251: 1 volume, 260 Han characters.");

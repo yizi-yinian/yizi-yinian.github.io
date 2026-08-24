@@ -13,23 +13,52 @@ import {
 import hanziWriterCoverage from "@/app/data/hanzi-writer-coverage.json";
 import {
   diamondSutra,
-  diamondSutraCharacters,
+  getCompletedSectionCount,
   getSectionAt,
   getSectionStatus,
+  getSutraCharacters,
+  sutras,
+  type Sutra,
   type SutraSection,
 } from "@/app/lib/sutra";
 
-const STORAGE_KEY = "yizi-yinian-progress-v1";
-const TOTAL_CHARACTERS = diamondSutraCharacters.length;
+const STORAGE_KEY = "yizi-yinian-progress-v2";
+const LEGACY_STORAGE_KEY = "yizi-yinian-progress-v1";
 const FREEHAND_FALLBACK = new Set(hanziWriterCoverage.freehandFallback);
 
 type SavedProgress = {
-  scriptureId: "diamond-sutra";
+  scriptureId: string;
   characterIndex: number;
   completedCount?: number;
   completedIndices?: number[];
   elapsedSeconds: number;
   updatedAt: string;
+};
+
+type SavedLibrary = {
+  version: 2;
+  activeScriptureId: string;
+  progresses: Record<string, SavedProgress>;
+};
+
+const SUTRA_PRESENTATION: Record<string, {
+  coverLines: [string, string];
+  description: string;
+  verse: [string, string];
+  theme: string;
+}> = {
+  "diamond-sutra": {
+    coverLines: ["金剛般若", "波羅蜜經"],
+    description: "從「如是我聞」開始，一字一念。建議每次抄寫 10–20 分鐘。",
+    verse: ["應無所住，", "而生其心。"],
+    theme: "diamond",
+  },
+  "heart-sutra": {
+    coverLines: ["般若波羅蜜多", "心經"],
+    description: "二百六十字，篇幅精要。適合在一段安靜時間裡完整抄寫。",
+    verse: ["照見五蘊皆空，", "度一切苦厄。"],
+    theme: "heart",
+  },
 };
 
 function formatTime(seconds: number) {
@@ -49,14 +78,49 @@ function formatSectionNumber(value: number) {
   return `${digits[tens]}十${digits[ones]}`;
 }
 
-function chapterLabel(section: SutraSection) {
-  return `第${formatSectionNumber(section.id)}品`;
+function sectionLabel(sutra: Sutra, section: SutraSection) {
+  if (sutra.sections.length === 1) return `全${sutra.sectionUnit}`;
+  return `第${formatSectionNumber(section.id)}${sutra.sectionUnit}`;
 }
 
-function writingPromptFor(index: number) {
-  return FREEHAND_FALLBACK.has(diamondSutraCharacters[index])
+function writingPromptFor(character: string) {
+  return FREEHAND_FALLBACK.has(character)
     ? "此異體字暫無筆順校驗，請依淡墨字形書寫"
     : "依照淡墨字形，緩緩落筆";
+}
+
+function emptyProgress(scriptureId: string): SavedProgress {
+  return {
+    scriptureId,
+    characterIndex: 0,
+    completedIndices: [],
+    elapsedSeconds: 0,
+    updatedAt: "",
+  };
+}
+
+function normalizeProgress(progress: SavedProgress | undefined, scripture: Sutra): SavedProgress {
+  const totalCharacters = scripture.characterCount;
+  if (!progress) return emptyProgress(scripture.id);
+  const restored = Array.isArray(progress.completedIndices)
+    ? progress.completedIndices
+    : Array.from(
+        { length: Math.max(0, Math.min(progress.completedCount ?? 0, totalCharacters)) },
+        (_, index) => index,
+      );
+  return {
+    ...progress,
+    scriptureId: scripture.id,
+    characterIndex: Math.max(0, Math.min(progress.characterIndex || 0, totalCharacters - 1)),
+    completedIndices: Array.from(
+      new Set(
+        restored.filter(
+          (index) => Number.isInteger(index) && index >= 0 && index < totalCharacters,
+        ),
+      ),
+    ).sort((left, right) => left - right),
+    elapsedSeconds: Math.max(0, progress.elapsedSeconds || 0),
+  };
 }
 
 type FreehandWriterProps = {
@@ -133,12 +197,70 @@ function FreehandWriter({ character, guide, resetVersion, onComplete }: Freehand
   );
 }
 
+type LibrarySutraCardProps = {
+  scripture: Sutra;
+  progress?: SavedProgress;
+  onStart: (scriptureId: string) => void;
+};
+
+function LibrarySutraCard({ scripture, progress, onStart }: LibrarySutraCardProps) {
+  const presentation = SUTRA_PRESENTATION[scripture.id];
+  const normalized = normalizeProgress(progress, scripture);
+  const completedSet = new Set(normalized.completedIndices);
+  const copiedCount = completedSet.size;
+  const sutraProgress = Math.round((copiedCount / scripture.characterCount) * 100);
+  const currentSection = getSectionAt(scripture, normalized.characterIndex);
+  const sectionCountLabel = `${formatSectionNumber(scripture.sections.length)}${scripture.sectionUnit}`;
+
+  return (
+    <article className={`scripture-card featured ${presentation.theme}-featured`}>
+      <div className={`book-cover ${presentation.theme}-book-cover`}>
+        <span>{scripture.translator}</span>
+        <strong>{presentation.coverLines[0]}<br />{presentation.coverLines[1]}</strong>
+        <i>般若</i>
+      </div>
+      <div className="book-info">
+        <div className="book-meta">
+          <span>{sectionCountLabel}</span>
+          <span>正文 {scripture.characterCount.toLocaleString("zh-Hant")} 字</span>
+          <span>{scripture.script}</span>
+        </div>
+        <h2>{scripture.title}</h2>
+        <p>{presentation.description}</p>
+        {copiedCount > 0 ? (
+          <div className="continue-progress">
+            <div>
+              <span>上次抄至</span>
+              <strong>{sectionLabel(scripture, currentSection)} · 第 {normalized.characterIndex - currentSection.startIndex + 1} 字</strong>
+            </div>
+            <span>{sutraProgress}%</span>
+            <div className="continue-track"><i style={{ width: `${Math.max(sutraProgress, 1)}%` }} /></div>
+          </div>
+        ) : (
+          <div className="new-book-note">
+            尚未開始 · {scripture.sections.length === 1 ? "從卷首起抄" : `從第一${scripture.sectionUnit}起抄`}
+          </div>
+        )}
+        <button className="start-writing" type="button" onClick={() => onStart(scripture.id)}>
+          {copiedCount > 0 ? "繼續抄寫" : "開始抄寫"}<span>→</span>
+        </button>
+        <a
+          className="source-credit"
+          href={scripture.source.url}
+          target="_blank"
+          rel="noreferrer"
+        >經文依據 {scripture.source.label.replace("CBETA《大正新脩大藏經》", "CBETA ")} 校對 ↗</a>
+      </div>
+    </article>
+  );
+}
+
 export default function Home() {
   const writerMount = useRef<HTMLDivElement>(null);
   const writer = useRef<HanziWriter | null>(null);
   const advanceTimer = useRef<number | undefined>(undefined);
-  const [characterIndex, setCharacterIndex] = useState(0);
-  const [completedIndices, setCompletedIndices] = useState<number[]>([]);
+  const [activeScriptureId, setActiveScriptureId] = useState(diamondSutra.id);
+  const [progressByScripture, setProgressByScripture] = useState<Record<string, SavedProgress>>({});
   const [resetVersion, setResetVersion] = useState(0);
   const [guide, setGuide] = useState(true);
   const [gentleHints, setGentleHints] = useState(true);
@@ -146,16 +268,29 @@ export default function Home() {
   const [focusMode, setFocusMode] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<"chapters" | "progress" | "settings" | null>(null);
   const [feedback, setFeedback] = useState("依照淡墨字形，緩緩落筆");
-  const [seconds, setSeconds] = useState(0);
   const [screen, setScreen] = useState<"library" | "writing">("library");
   const [storageReady, setStorageReady] = useState(false);
 
-  const currentCharacter = diamondSutraCharacters[characterIndex];
+  const scripture = sutras.find((item) => item.id === activeScriptureId) ?? diamondSutra;
+  const presentation = SUTRA_PRESENTATION[scripture.id];
+  const characters = useMemo(() => getSutraCharacters(scripture), [scripture]);
+  const totalCharacters = characters.length;
+  const activeProgress = useMemo(
+    () => progressByScripture[scripture.id] ?? emptyProgress(scripture.id),
+    [progressByScripture, scripture.id],
+  );
+  const characterIndex = activeProgress.characterIndex;
+  const seconds = activeProgress.elapsedSeconds;
+  const completedIndices = useMemo(
+    () => activeProgress.completedIndices ?? [],
+    [activeProgress.completedIndices],
+  );
+  const currentCharacter = characters[characterIndex];
   const usesFreehandFallback = FREEHAND_FALLBACK.has(currentCharacter);
-  const currentSection = getSectionAt(characterIndex);
+  const currentSection = getSectionAt(scripture, characterIndex);
   const completedSet = useMemo(() => new Set(completedIndices), [completedIndices]);
   const copiedCount = completedSet.size;
-  const sutraProgress = Math.round((copiedCount / TOTAL_CHARACTERS) * 100);
+  const sutraProgress = Math.round((copiedCount / totalCharacters) * 100);
   const currentSectionCompleted = useMemo(
     () =>
       Array.from(
@@ -168,38 +303,54 @@ export default function Home() {
     (currentSectionCompleted / currentSection.characterCount) * 100,
   );
   const completedSectionCount = useMemo(
-    () =>
-      diamondSutra.sections.filter((section) => {
-        for (let index = section.startIndex; index < section.endIndex; index += 1) {
-          if (!completedSet.has(index)) return false;
-        }
-        return true;
-      }).length,
-    [completedSet],
+    () => getCompletedSectionCount(scripture, completedSet),
+    [completedSet, scripture],
   );
   const sourceWindowStart = Math.max(
     0,
-    Math.min(characterIndex - 9, TOTAL_CHARACTERS - 22),
+    Math.min(characterIndex - 9, Math.max(0, totalCharacters - 22)),
   );
-  const sourceCharacters = diamondSutraCharacters.slice(
+  const sourceCharacters = characters.slice(
     sourceWindowStart,
     sourceWindowStart + 22,
   );
 
+  const updateActiveProgress = useCallback(
+    (updater: (progress: SavedProgress) => SavedProgress) => {
+      setProgressByScripture((values) => {
+        const current = normalizeProgress(values[scripture.id], scripture);
+        return {
+          ...values,
+          [scripture.id]: {
+            ...updater(current),
+            scriptureId: scripture.id,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+    },
+    [scripture],
+  );
+
   const moveTo = useCallback((nextIndex: number) => {
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
-    const safeIndex = Math.max(0, Math.min(nextIndex, TOTAL_CHARACTERS - 1));
-    setCharacterIndex(safeIndex);
-    setFeedback(writingPromptFor(safeIndex));
-  }, []);
+    const safeIndex = Math.max(0, Math.min(nextIndex, totalCharacters - 1));
+    updateActiveProgress((value) => ({ ...value, characterIndex: safeIndex }));
+    setFeedback(writingPromptFor(characters[safeIndex]));
+  }, [characters, totalCharacters, updateActiveProgress]);
 
   const completeCurrentCharacter = useCallback(() => {
-    setCompletedIndices((value) =>
-      value.includes(characterIndex)
+    updateActiveProgress((value) => {
+      const completed = value.completedIndices ?? [];
+      return completed.includes(characterIndex)
         ? value
-        : [...value, characterIndex].sort((left, right) => left - right),
-    );
-    if (characterIndex === TOTAL_CHARACTERS - 1) {
+        : {
+            ...value,
+            completedCount: completed.length + 1,
+            completedIndices: [...completed, characterIndex].sort((left, right) => left - right),
+          };
+    });
+    if (characterIndex === totalCharacters - 1) {
       setFeedback("全經抄寫圓滿，願此刻清淨安穩");
       return;
     }
@@ -208,12 +359,12 @@ export default function Home() {
       return;
     }
     setFeedback("寫得很好，停一息，進入下一字");
-    const nextIndex = Math.min(characterIndex + 1, TOTAL_CHARACTERS - 1);
+    const nextIndex = Math.min(characterIndex + 1, totalCharacters - 1);
     advanceTimer.current = window.setTimeout(() => {
-      setCharacterIndex(nextIndex);
-      setFeedback(writingPromptFor(nextIndex));
+      updateActiveProgress((value) => ({ ...value, characterIndex: nextIndex }));
+      setFeedback(writingPromptFor(characters[nextIndex]));
     }, 850);
-  }, [autoAdvance, characterIndex]);
+  }, [autoAdvance, characterIndex, characters, totalCharacters, updateActiveProgress]);
 
   useEffect(
     () => () => {
@@ -226,38 +377,32 @@ export default function Home() {
     const restoreFrame = window.requestAnimationFrame(() => {
       try {
         const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const progress = JSON.parse(saved) as SavedProgress;
-          if (progress.scriptureId === "diamond-sutra") {
-            const restoredIndex = Math.max(
-              0,
-              Math.min(progress.characterIndex, TOTAL_CHARACTERS - 1),
-            );
-            setCharacterIndex(restoredIndex);
-            setFeedback(writingPromptFor(restoredIndex));
-            const restored = Array.isArray(progress.completedIndices)
-              ? progress.completedIndices
-              : Array.from(
-                  {
-                    length: Math.max(
-                      0,
-                      Math.min(progress.completedCount ?? 0, TOTAL_CHARACTERS),
-                    ),
-                  },
-                  (_, index) => index,
-                );
-            setCompletedIndices(
-              Array.from(
-                new Set(
-                  restored.filter(
-                    (index) => Number.isInteger(index) && index >= 0 && index < TOTAL_CHARACTERS,
-                  ),
-                ),
-              ).sort((left, right) => left - right),
-            );
-            setSeconds(Math.max(0, progress.elapsedSeconds || 0));
+        const library = saved ? JSON.parse(saved) as SavedLibrary : null;
+        const restored: Record<string, SavedProgress> = {};
+        for (const item of sutras) {
+          if (library?.version === 2 && library.progresses?.[item.id]) {
+            restored[item.id] = normalizeProgress(library.progresses[item.id], item);
           }
         }
+
+        const legacySaved = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+        if (!restored[diamondSutra.id] && legacySaved) {
+          const legacy = JSON.parse(legacySaved) as SavedProgress;
+          if (legacy.scriptureId === diamondSutra.id) {
+            restored[diamondSutra.id] = normalizeProgress(legacy, diamondSutra);
+          }
+        }
+
+        setProgressByScripture(restored);
+        const restoredScripture = sutras.find((item) => item.id === library?.activeScriptureId)
+          ?? sutras
+            .filter((item) => restored[item.id]?.updatedAt)
+            .sort((left, right) => restored[right.id].updatedAt.localeCompare(restored[left.id].updatedAt))[0]
+          ?? diamondSutra;
+        setActiveScriptureId(restoredScripture.id);
+        const restoredProgress = restored[restoredScripture.id] ?? emptyProgress(restoredScripture.id);
+        const restoredCharacters = getSutraCharacters(restoredScripture);
+        setFeedback(writingPromptFor(restoredCharacters[restoredProgress.characterIndex]));
       } catch {
         // Private browsing may disable storage; the writing surface still works.
       } finally {
@@ -269,26 +414,25 @@ export default function Home() {
 
   useEffect(() => {
     if (screen !== "writing") return;
-    const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+    const timer = window.setInterval(() => {
+      updateActiveProgress((value) => ({ ...value, elapsedSeconds: value.elapsedSeconds + 1 }));
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, [screen]);
+  }, [screen, updateActiveProgress]);
 
   useEffect(() => {
     if (!storageReady) return;
-    const progress: SavedProgress = {
-      scriptureId: "diamond-sutra",
-      characterIndex,
-      completedCount: copiedCount,
-      completedIndices: Array.from(completedSet).sort((left, right) => left - right),
-      elapsedSeconds: seconds,
-      updatedAt: new Date().toISOString(),
+    const library: SavedLibrary = {
+      version: 2,
+      activeScriptureId: scripture.id,
+      progresses: progressByScripture,
     };
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
     } catch {
       // Storage is an enhancement, never a blocker for the writing surface.
     }
-  }, [characterIndex, completedSet, copiedCount, seconds, storageReady]);
+  }, [progressByScripture, scripture.id, storageReady]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -370,6 +514,17 @@ export default function Home() {
     setScreen("writing");
   };
 
+  const openScripture = (scriptureId: string) => {
+    const nextScripture = sutras.find((item) => item.id === scriptureId) ?? diamondSutra;
+    const nextProgress = normalizeProgress(progressByScripture[nextScripture.id], nextScripture);
+    const nextCharacters = getSutraCharacters(nextScripture);
+    if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
+    setActiveScriptureId(nextScripture.id);
+    setFeedback(writingPromptFor(nextCharacters[nextProgress.characterIndex]));
+    setMobileSheet(null);
+    setScreen("writing");
+  };
+
   const demonstrate = () => {
     if (usesFreehandFallback) {
       setFeedback("此異體字暫無筆順校驗，請依淡墨字形書寫");
@@ -398,7 +553,7 @@ export default function Home() {
             className="library-history"
             type="button"
             onClick={() => {
-              setScreen("writing");
+              openScripture(activeScriptureId);
               setMobileSheet("progress");
             }}
           ><span aria-hidden="true">◷</span> 抄寫記錄</button>
@@ -411,44 +566,14 @@ export default function Home() {
         </section>
 
         <section className="scripture-shelf" aria-label="選擇經文">
-          <article className="scripture-card featured">
-            <div className="book-cover diamond-cover">
-              <span>{diamondSutra.translator}</span>
-              <strong>金剛般若<br />波羅蜜經</strong>
-              <i>般若</i>
-            </div>
-            <div className="book-info">
-              <div className="book-meta"><span>三十二品</span><span>正文 5,129 字</span><span>繁體</span></div>
-              <h2>{diamondSutra.title}</h2>
-              <p>從“如是我聞”開始，一字一念。建議每次抄寫 10–20 分鐘。</p>
-              {copiedCount > 0 ? (
-                <div className="continue-progress">
-                  <div>
-                    <span>上次抄至</span>
-                    <strong>{chapterLabel(currentSection)} · 第 {characterIndex - currentSection.startIndex + 1} 字</strong>
-                  </div>
-                  <span>{sutraProgress}%</span>
-                  <div className="continue-track"><i style={{ width: `${Math.max(sutraProgress, 1)}%` }} /></div>
-                </div>
-              ) : (
-                <div className="new-book-note">尚未開始 · 從第一品起抄</div>
-              )}
-              <button className="start-writing" type="button" onClick={() => setScreen("writing")}>
-                {copiedCount > 0 ? "繼續抄寫" : "開始抄寫"}<span>→</span>
-              </button>
-              <a
-                className="source-credit"
-                href="https://cbetaonline.dila.edu.tw/zh/T0235_001"
-                target="_blank"
-                rel="noreferrer"
-              >經文依據 CBETA T08 No. 235 校對 ↗</a>
-            </div>
-          </article>
-
-          <article className="scripture-card upcoming">
-            <div className="mini-cover heart-cover"><strong>般若<br />心經</strong></div>
-            <div><span>即將推出</span><h3>般若波羅蜜多心經</h3><p>一卷 · 二百六十字</p></div>
-          </article>
+          {sutras.map((item) => (
+            <LibrarySutraCard
+              key={item.id}
+              scripture={item}
+              progress={progressByScripture[item.id]}
+              onStart={openScripture}
+            />
+          ))}
           <article className="scripture-card upcoming">
             <div className="mini-cover medicine-cover"><strong>藥師<br />經</strong></div>
             <div><span>即將推出</span><h3>藥師琉璃光如來本願功德經</h3><p>一卷 · 十二大願</p></div>
@@ -469,8 +594,8 @@ export default function Home() {
         </button>
 
         <div className="mobile-title">
-          <strong>金剛經</strong>
-          <span>{chapterLabel(currentSection)} · {formatTime(seconds)}</span>
+          <strong>{scripture.shortTitle}</strong>
+          <span>{sectionLabel(scripture, currentSection)} · {formatTime(seconds)}</span>
         </div>
 
         <div className="session-pill" aria-label={`累計抄寫 ${formatTime(seconds)}`}>
@@ -486,14 +611,14 @@ export default function Home() {
 
       <aside className="left-panel" aria-label="經文章節">
         <div className="sutra-heading">
-          <span className="eyebrow">{diamondSutra.translator}</span>
-          <h1>金剛般若<br />波羅蜜經</h1>
+          <span className="eyebrow">{scripture.translator}</span>
+          <h1>{presentation.coverLines[0]}<br />{presentation.coverLines[1]}</h1>
           <div className="title-rule" />
-          <p>全經三十二品 · 正文 5,129 字</p>
+          <p>全經{scripture.sections.length}{scripture.sectionUnit} · 正文 {scripture.characterCount.toLocaleString("zh-Hant")} 字</p>
         </div>
 
         <nav className="section-list" aria-label="章節">
-          {diamondSutra.sections.map((section) => {
+          {scripture.sections.map((section) => {
             const active = section.id === currentSection.id;
             const status = getSectionStatus(section, completedSet, characterIndex);
             return (
@@ -513,15 +638,15 @@ export default function Home() {
 
         <div className="daily-verse">
           <span>今日一偈</span>
-          <p>應無所住，<br />而生其心。</p>
+          <p>{presentation.verse[0]}<br />{presentation.verse[1]}</p>
         </div>
       </aside>
 
       <section className="writing-stage" aria-label="抄寫區">
         <div className="paper">
           <div className="paper-heading">
-            <div><span>{chapterLabel(currentSection)}</span><h2>{currentSection.title}</h2></div>
-            <span className="page-count">第 {characterIndex + 1} / {TOTAL_CHARACTERS} 字</span>
+            <div><span>{sectionLabel(scripture, currentSection)}</span><h2>{currentSection.title}</h2></div>
+            <span className="page-count">第 {characterIndex + 1} / {totalCharacters} 字</span>
           </div>
 
           <div className="source-strip" aria-label="經文原文">
@@ -538,7 +663,7 @@ export default function Home() {
                 >{character}</button>
               );
             })}
-            {sourceWindowStart + sourceCharacters.length < TOTAL_CHARACTERS && <span className="source-more">…</span>}
+            {sourceWindowStart + sourceCharacters.length < totalCharacters && <span className="source-more">…</span>}
           </div>
 
           <div className="practice-area">
@@ -581,13 +706,13 @@ export default function Home() {
 
       <aside className="right-panel" aria-label="抄寫進度">
         <section className="progress-card">
-          <div className="card-title"><span>全經進度</span><span>{completedSectionCount} / 32 品</span></div>
+          <div className="card-title"><span>全經進度</span><span>{completedSectionCount} / {scripture.sections.length} {scripture.sectionUnit}</span></div>
           <div className="progress-ring" style={{ "--progress": `${sutraProgress}%` } as CSSProperties}>
-            <div><strong>{sutraProgress}%</strong><span>{copiedCount} / {TOTAL_CHARACTERS} 字</span></div>
+            <div><strong>{sutraProgress}%</strong><span>{copiedCount} / {totalCharacters} 字</span></div>
           </div>
           <p>累計靜心抄寫 <strong>{formatTime(seconds)}</strong></p>
           <div className="progress-track"><span style={{ width: `${sutraProgress}%` }} /></div>
-          <small>{chapterLabel(currentSection)}已完成 {currentSectionProgress}%</small>
+          <small>{sectionLabel(scripture, currentSection)}已完成 {currentSectionProgress}%</small>
         </section>
 
         <section className="guidance-card">
@@ -598,8 +723,8 @@ export default function Home() {
         </section>
 
         <section className="session-card">
-          <div><span>當前章節</span><strong>{currentSection.id} / 32 品</strong></div>
-          <div><span>本品完成</span><strong>{currentSectionCompleted} / {currentSection.characterCount}</strong></div>
+          <div><span>當前章節</span><strong>{currentSection.id} / {scripture.sections.length} {scripture.sectionUnit}</strong></div>
+          <div><span>本{scripture.sectionUnit}完成</span><strong>{currentSectionCompleted} / {currentSection.characterCount}</strong></div>
         </section>
 
         <button className="finish-button" type="button" onClick={() => setScreen("library")}>完成本次抄寫</button>
@@ -618,9 +743,9 @@ export default function Home() {
             <button className="sheet-handle" type="button" onClick={() => setMobileSheet(null)} aria-label="關閉面板" />
             {mobileSheet === "chapters" && (
               <>
-                <div className="sheet-heading"><div><span>金剛般若波羅蜜經</span><h3>選擇章節</h3></div><strong>32 品</strong></div>
+                <div className="sheet-heading"><div><span>{scripture.title}</span><h3>{scripture.sections.length === 1 ? "經文目錄" : "選擇章節"}</h3></div><strong>{scripture.sections.length} {scripture.sectionUnit}</strong></div>
                 <div className="mobile-section-list">
-                  {diamondSutra.sections.map((section) => {
+                  {scripture.sections.map((section) => {
                     const status = getSectionStatus(section, completedSet, characterIndex);
                     return (
                       <button key={section.id} className={section.id === currentSection.id ? "active" : ""} type="button" onClick={() => openSection(section)}>
@@ -637,7 +762,7 @@ export default function Home() {
                 <div className="mobile-progress-bar"><span style={{ width: `${sutraProgress}%` }} /></div>
                 <div className="mobile-stats">
                   <div><span>累計用時</span><strong>{formatTime(seconds)}</strong></div>
-                  <div><span>完成章節</span><strong>{completedSectionCount} / 32</strong></div>
+                  <div><span>完成章節</span><strong>{completedSectionCount} / {scripture.sections.length}</strong></div>
                   <div><span>完成字數</span><strong>{copiedCount}</strong></div>
                 </div>
                 <button className="sheet-primary" type="button" onClick={() => setScreen("library")}>完成本次抄寫</button>

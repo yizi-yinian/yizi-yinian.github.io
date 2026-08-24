@@ -124,6 +124,12 @@ button:focus-visible {
   box-shadow: 10px 0 28px rgba(50,54,44,.09);
 }
 
+.heart-book-cover {
+  background:
+    linear-gradient(90deg, rgba(57,34,25,.14), transparent 7%),
+    #9a7765;
+}
+
 .book-cover::before,
 .book-cover::after {
   content: "";
@@ -1176,6 +1182,7 @@ button:focus-visible {
     padding: 0 14px;
   }
   .scripture-card.featured { display: block; min-height: 0; }
+  .scripture-card.featured + .scripture-card.featured { margin-top: 12px; }
   .book-cover {
     height: 168px;
     padding: 22px 24px;

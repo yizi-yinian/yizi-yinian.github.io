@@ -2,16 +2,21 @@ import { copyFile, mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = process.cwd();
-const scripture = JSON.parse(
-  await readFile(path.join(projectRoot, "app/data/diamond-sutra.json"), "utf8"),
+const scriptureFiles = ["diamond-sutra.json", "heart-sutra.json"];
+const scriptures = await Promise.all(
+  scriptureFiles.map(async (fileName) =>
+    JSON.parse(await readFile(path.join(projectRoot, "app/data", fileName), "utf8")),
+  ),
 );
 const coverage = JSON.parse(
   await readFile(path.join(projectRoot, "app/data/hanzi-writer-coverage.json"), "utf8"),
 );
 const characters = [
   ...new Set(
-    scripture.sections.flatMap((section) =>
-      Array.from(section.text).filter((character) => /[\u3400-\u9fff]/u.test(character)),
+    scriptures.flatMap((scripture) =>
+      scripture.sections.flatMap((section) =>
+        Array.from(section.text).filter((character) => /[\u3400-\u9fff]/u.test(character)),
+      ),
     ),
   ),
 ];
