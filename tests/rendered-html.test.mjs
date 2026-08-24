@@ -15,8 +15,8 @@ test("renders the sutra writing experience", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /一字一念/);
-  assert.match(html, /金刚般若/);
-  assert.match(html, /开始抄写/);
-  assert.match(html, /所有进度仅保存在本机/);
+  assert.match(html, /金剛般若/);
+  assert.match(html, /開始抄寫/);
+  assert.match(html, /所有進度僅保存在本機/);
   assert.doesNotMatch(html, /codex-preview/);
 });

@@ -1,17 +1,20 @@
 # 一字一念
 
-面向手机的在线佛经抄写应用。目前收录简体《金刚般若波罗蜜经》第一品试用段落，书写字形与进度均在浏览器本地处理。
+面向手機的線上佛經抄寫應用。目前完整收錄繁體《金剛般若波羅蜜經》三十二品，書寫字形與進度均在瀏覽器本地處理。
 
 ## 功能
 
-- 首页选经，支持从上次位置继续
-- Hanzi Writer 笔顺引导、淡墨字形、笔顺演示与重写
-- 使用 `localStorage` 保存当前字、完成字数和累计用时
-- 《金刚经》经文以 CBETA《大正新修大藏经》T08 No.235 为校对底本
-- 所需汉字字形随网页发布，不依赖外部 CDN
-- 手机优先，同时适配桌面
+- 首頁選經，支持從上次位置繼續
+- Hanzi Writer 筆順引導、淡墨字形、筆順演示與重寫
+- 使用 `localStorage` 保存當前字、逐字完成狀態和累計用時
+- 三十二品目錄、章節進度與任意章節跳轉
+- 《金剛經》經文直接取自 CBETA《大正新脩大藏經》T08 No.235 XML，不作簡繁轉換
+- 固定經文摘要校驗，防止後續修改引入缺字、錯字或章節錯位
+- 所需漢字字形隨網頁發佈，不依賴外部 CDN
+- Hanzi Writer 未收錄的「鉢、諍、闇」保留 CBETA 原字，使用淡墨字形自由描寫，不以近似字替換
+- 手機優先，同時適配桌面
 
-## 本地运行
+## 本地運行
 
 需要 Node.js 22 或以上版本。
 
@@ -22,24 +25,27 @@ npm run dev
 
 ## GitHub Pages
 
-项目已包含 `.github/workflows/deploy-pages.yml`。推送到 GitHub 后：
+項目已包含 `.github/workflows/deploy-pages.yml`。推送到 GitHub 後：
 
-1. 打开仓库的 **Settings → Pages**。
-2. 在 **Build and deployment** 中选择 **GitHub Actions**。
-3. 推送 `main` 分支，工作流会自动生成并发布静态网页。
+1. 打開倉庫的 **Settings → Pages**。
+2. 在 **Build and deployment** 中選擇 **GitHub Actions**。
+3. 推送 `main` 分支，工作流會自動生成併發布靜態網頁。
 
-本地检查 GitHub Pages 静态产物：
+本地檢查 GitHub Pages 靜態產物：
 
 ```bash
 npm run build:github
 ```
 
-输出位于 `out/`。应用不需要数据库、服务器或登录服务。
+輸出位於 `out/`。應用不需要數據庫、服務器或登錄服務。
 
-## 校验
+## 校驗
 
 ```bash
+npm run verify:sutra
 npm test
 ```
 
-字形数据来自 Hanzi Writer Data / Make Me a Hanzi，并遵循仓库内 `public/hanzi-data/ARPHICPL.TXT` 所附许可。
+經文校驗結果應為：三十二品、5,129 個正文漢字。CBETA 來源版本及 SHA-256 摘要記錄在 `app/data/diamond-sutra.json`。
+
+字形數據來自 Hanzi Writer Data / Make Me a Hanzi，並遵循倉庫內 `public/hanzi-data/ARPHICPL.TXT` 所附許可。

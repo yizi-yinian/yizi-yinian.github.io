@@ -1,14 +1,29 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const [githubOwner = "", githubRepository = ""] = (process.env.GITHUB_REPOSITORY ?? "").split("/");
+const githubPagesUrl = githubOwner && githubRepository
+  ? githubRepository.endsWith(".github.io")
+    ? `https://${githubOwner}.github.io/`
+    : `https://${githubOwner}.github.io/${githubRepository}/`
+  : "http://localhost:3000/";
+
 export const metadata: Metadata = {
-  title: "一字一念 · 金刚经抄写",
-  description: "安静、专注的在线佛经抄写体验。",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? githubPagesUrl),
+  title: "一字一念 · 金剛經抄寫",
+  description: "安靜、專注的在線佛經抄寫體驗。",
+  openGraph: {
+    title: "一字一念",
+    description: "金剛經・手機抄寫",
+    locale: "zh_Hant",
+    type: "website",
+    images: [{ url: "og-image.png", width: 1200, height: 630, alt: "一字一念・金剛經手機抄寫" }],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-Hant">
       <body>{children}</body>
     </html>
   );

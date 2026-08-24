@@ -258,6 +258,16 @@ button:focus-visible {
 
 .start-writing:hover { background: var(--vermilion-dark); transform: translateY(-1px); }
 
+.source-credit {
+  display: inline-block;
+  margin-top: 12px;
+  color: #8b8e86;
+  font-size: 9px;
+  text-decoration: none;
+}
+
+.source-credit:hover { color: var(--vermilion-dark); }
+
 .scripture-card.upcoming {
   min-height: 126px;
   display: grid;
@@ -535,6 +545,11 @@ button:focus-visible {
 
 .section.active small {
   color: var(--vermilion);
+}
+
+.section.done .section-number,
+.section.done small {
+  color: #748775;
 }
 
 .section-mark {
@@ -818,6 +833,50 @@ button:focus-visible {
   max-height: 100%;
 }
 
+.freehand-writer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.freehand-writer canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.freehand-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  color: #c9c1b1;
+  font-family: var(--serif);
+  font-size: clamp(190px, 27vw, 270px);
+  line-height: 1;
+  opacity: .72;
+  pointer-events: none;
+}
+
+.freehand-writer button {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(164,71,62,.25);
+  border-radius: 6px;
+  background: rgba(248,245,237,.92);
+  color: var(--vermilion-dark);
+  font-size: 10px;
+  cursor: pointer;
+}
+
 .feedback {
   height: 24px;
   display: flex;
@@ -863,6 +922,11 @@ button:focus-visible {
   background: rgba(164,71,62,.065);
   border-color: rgba(164,71,62,.19);
   color: var(--vermilion-dark);
+}
+
+.tool:disabled {
+  cursor: default;
+  opacity: .58;
 }
 
 .tool span {
