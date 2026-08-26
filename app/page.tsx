@@ -24,7 +24,60 @@ import {
 
 const STORAGE_KEY = "yizi-yinian-progress-v2";
 const LEGACY_STORAGE_KEY = "yizi-yinian-progress-v1";
+const PREFERENCES_STORAGE_KEY = "yizi-yinian-preferences-v1";
 const FREEHAND_FALLBACK = new Set(hanziWriterCoverage.freehandFallback);
+
+type Handedness = "left" | "right";
+
+type WritingLayout = {
+  handedness: Handedness;
+  size: number;
+  x: number;
+  y: number;
+};
+
+type SavedPreferences = {
+  version: 1;
+  guide: boolean;
+  gentleHints: boolean;
+  autoAdvance: boolean;
+  writingLayout: WritingLayout;
+};
+
+type LayoutGesture = {
+  mode: "move" | "resize";
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startLayout: WritingLayout;
+  workspaceWidth: number;
+};
+
+function writingLayoutPreset(handedness: Handedness): WritingLayout {
+  return {
+    handedness,
+    size: 320,
+    x: handedness === "left" ? 0 : 1,
+    y: 24,
+  };
+}
+
+function normalizeWritingLayout(layout: Partial<WritingLayout> | undefined): WritingLayout {
+  const handedness = layout?.handedness === "left" ? "left" : "right";
+  const preset = writingLayoutPreset(handedness);
+  return {
+    handedness,
+    size: typeof layout?.size === "number" && Number.isFinite(layout.size)
+      ? Math.max(220, Math.min(380, layout.size))
+      : preset.size,
+    x: typeof layout?.x === "number" && Number.isFinite(layout.x)
+      ? Math.max(0, Math.min(1, layout.x))
+      : preset.x,
+    y: typeof layout?.y === "number" && Number.isFinite(layout.y)
+      ? Math.max(0, Math.min(140, layout.y))
+      : preset.y,
+  };
+}
 
 type SavedProgress = {
   scriptureId: string;
@@ -257,8 +310,10 @@ function LibrarySutraCard({ scripture, progress, onStart }: LibrarySutraCardProp
 
 export default function Home() {
   const writerMount = useRef<HTMLDivElement>(null);
+  const gridWorkspace = useRef<HTMLDivElement>(null);
   const writer = useRef<HanziWriter | null>(null);
   const advanceTimer = useRef<number | undefined>(undefined);
+  const layoutGesture = useRef<LayoutGesture | null>(null);
   const [activeScriptureId, setActiveScriptureId] = useState(diamondSutra.id);
   const [progressByScripture, setProgressByScripture] = useState<Record<string, SavedProgress>>({});
   const [resetVersion, setResetVersion] = useState(0);
@@ -266,6 +321,8 @@ export default function Home() {
   const [gentleHints, setGentleHints] = useState(true);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [writingLayout, setWritingLayout] = useState<WritingLayout>(() => writingLayoutPreset("right"));
+  const [layoutEditing, setLayoutEditing] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<"chapters" | "progress" | "settings" | null>(null);
   const [feedback, setFeedback] = useState("依照淡墨字形，緩緩落筆");
   const [screen, setScreen] = useState<"library" | "writing">("library");
@@ -314,6 +371,12 @@ export default function Home() {
     sourceWindowStart,
     sourceWindowStart + 22,
   );
+  const writingGridStyle = {
+    "--writing-grid-size": `${writingLayout.size}px`,
+    "--writing-grid-x": `${writingLayout.x * 100}%`,
+    "--writing-grid-shift": `${writingLayout.x * -100}%`,
+    "--writing-grid-y": `${writingLayout.y}px`,
+  } as CSSProperties;
 
   const updateActiveProgress = useCallback(
     (updater: (progress: SavedProgress) => SavedProgress) => {
@@ -366,6 +429,71 @@ export default function Home() {
     }, 850);
   }, [autoAdvance, characterIndex, characters, totalCharacters, updateActiveProgress]);
 
+  const chooseHandedness = (handedness: Handedness) => {
+    setWritingLayout((value) => ({
+      ...value,
+      handedness,
+      x: handedness === "left" ? 0 : 1,
+      y: Math.max(value.y, 24),
+    }));
+  };
+
+  const beginLayoutGesture = (
+    mode: LayoutGesture["mode"],
+    event: ReactPointerEvent<HTMLElement>,
+  ) => {
+    if (!layoutEditing || !gridWorkspace.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    layoutGesture.current = {
+      mode,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLayout: writingLayout,
+      workspaceWidth: gridWorkspace.current.clientWidth,
+    };
+  };
+
+  const updateLayoutGesture = (event: ReactPointerEvent<HTMLElement>) => {
+    const gesture = layoutGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = event.clientX - gesture.startClientX;
+    const deltaY = event.clientY - gesture.startClientY;
+
+    if (gesture.mode === "move") {
+      const renderedSize = Math.min(gesture.startLayout.size, gesture.workspaceWidth);
+      const travel = Math.max(0, gesture.workspaceWidth - renderedSize);
+      const left = Math.max(0, Math.min(travel, gesture.startLayout.x * travel + deltaX));
+      setWritingLayout({
+        ...gesture.startLayout,
+        x: travel > 0 ? left / travel : 0.5,
+        y: Math.max(0, Math.min(140, gesture.startLayout.y + deltaY)),
+      });
+      return;
+    }
+
+    const horizontalDelta = gesture.startLayout.handedness === "left" ? -deltaX : deltaX;
+    const resizeDelta = Math.abs(horizontalDelta) > Math.abs(deltaY) ? horizontalDelta : deltaY;
+    setWritingLayout({
+      ...gesture.startLayout,
+      size: Math.max(
+        220,
+        Math.min(Math.min(380, gesture.workspaceWidth), gesture.startLayout.size + resizeDelta),
+      ),
+    });
+  };
+
+  const endLayoutGesture = (event: ReactPointerEvent<HTMLElement>) => {
+    if (layoutGesture.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    layoutGesture.current = null;
+  };
+
   useEffect(
     () => () => {
       if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
@@ -405,9 +533,23 @@ export default function Home() {
         setFeedback(writingPromptFor(restoredCharacters[restoredProgress.characterIndex]));
       } catch {
         // Private browsing may disable storage; the writing surface still works.
-      } finally {
-        setStorageReady(true);
       }
+
+      try {
+        const savedPreferences = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+        const preferences = savedPreferences
+          ? JSON.parse(savedPreferences) as Partial<SavedPreferences>
+          : null;
+        if (preferences?.version === 1) {
+          if (typeof preferences.guide === "boolean") setGuide(preferences.guide);
+          if (typeof preferences.autoAdvance === "boolean") setAutoAdvance(preferences.autoAdvance);
+          if (typeof preferences.gentleHints === "boolean") setGentleHints(preferences.gentleHints);
+          setWritingLayout(normalizeWritingLayout(preferences.writingLayout));
+        }
+      } catch {
+        // Ignore damaged or unavailable preference storage and keep safe defaults.
+      }
+      setStorageReady(true);
     });
     return () => window.cancelAnimationFrame(restoreFrame);
   }, []);
@@ -433,6 +575,22 @@ export default function Home() {
       // Storage is an enhancement, never a blocker for the writing surface.
     }
   }, [progressByScripture, scripture.id, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const preferences: SavedPreferences = {
+      version: 1,
+      guide,
+      autoAdvance,
+      gentleHints,
+      writingLayout,
+    };
+    try {
+      window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+    } catch {
+      // Preference persistence is optional; writing remains available without it.
+    }
+  }, [autoAdvance, gentleHints, guide, storageReady, writingLayout]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -503,6 +661,7 @@ export default function Home() {
     currentCharacter,
     gentleHints,
     guide,
+    layoutEditing,
     resetVersion,
     screen,
     usesFreehandFallback,
@@ -669,23 +828,56 @@ export default function Home() {
           <div className="practice-area">
             <button className="round-button previous" type="button" onClick={() => moveTo(characterIndex - 1)} aria-label="上一個字">←</button>
 
-            <div className="writer-column">
+            <div className={`writer-column${layoutEditing ? " layout-editing" : ""}`}>
               <div className="character-meta"><span>當前</span><strong>{currentCharacter}</strong><i aria-hidden="true" /></div>
-              <div className="writing-grid">
-                <div className="grid-line horizontal" />
-                <div className="grid-line vertical" />
-                <div className="grid-line diagonal-one" />
-                <div className="grid-line diagonal-two" />
-                {usesFreehandFallback ? (
-                  <FreehandWriter
-                    character={currentCharacter}
-                    guide={guide}
-                    resetVersion={resetVersion}
-                    onComplete={completeCurrentCharacter}
-                  />
-                ) : (
-                  <div className="writer-mount" ref={writerMount} aria-label={`請書寫“${currentCharacter}”字`} />
-                )}
+              {layoutEditing && (
+                <div className="layout-edit-toolbar" aria-label="田字格調整工具">
+                  <span>拖動格子調整位置</span>
+                  <button type="button" onClick={() => setWritingLayout(writingLayoutPreset(writingLayout.handedness))}>重置</button>
+                  <button type="button" className="done" onClick={() => setLayoutEditing(false)}>完成</button>
+                </div>
+              )}
+              <div className="grid-workspace" ref={gridWorkspace} style={writingGridStyle}>
+                <div className="grid-positioner">
+                  <div className="writing-grid">
+                    <div className="grid-line horizontal" />
+                    <div className="grid-line vertical" />
+                    <div className="grid-line diagonal-one" />
+                    <div className="grid-line diagonal-two" />
+                    {usesFreehandFallback ? (
+                      <FreehandWriter
+                        character={currentCharacter}
+                        guide={guide}
+                        resetVersion={resetVersion}
+                        onComplete={completeCurrentCharacter}
+                      />
+                    ) : (
+                      <div className="writer-mount" ref={writerMount} aria-label={`請書寫“${currentCharacter}”字`} />
+                    )}
+                  </div>
+                  {layoutEditing && (
+                    <div
+                      className="grid-edit-overlay"
+                      role="group"
+                      aria-label="拖動以移動田字格"
+                      onPointerDown={(event) => beginLayoutGesture("move", event)}
+                      onPointerMove={updateLayoutGesture}
+                      onPointerUp={endLayoutGesture}
+                      onPointerCancel={endLayoutGesture}
+                    >
+                      <span className="drag-cue">按住拖動</span>
+                      <button
+                        className={`resize-handle ${writingLayout.handedness}`}
+                        type="button"
+                        aria-label="拖動以調整田字格大小"
+                        onPointerDown={(event) => beginLayoutGesture("resize", event)}
+                        onPointerMove={updateLayoutGesture}
+                        onPointerUp={endLayoutGesture}
+                        onPointerCancel={endLayoutGesture}
+                      >↗</button>
+                    </div>
+                  )}
+                </div>
               </div>
               <p className="feedback"><span aria-hidden="true">◌</span>{feedback}</p>
             </div>
@@ -772,6 +964,35 @@ export default function Home() {
               <>
                 <div className="sheet-heading"><div><span>書寫體驗</span><h3>抄寫設置</h3></div></div>
                 <div className="setting-list">
+                  <div className="layout-setting">
+                    <span><strong>慣用手</strong><small>田字格會靠近持機手一側</small></span>
+                    <div className="handedness-control" role="group" aria-label="選擇慣用手">
+                      <button type="button" className={writingLayout.handedness === "left" ? "active" : ""} aria-pressed={writingLayout.handedness === "left"} onClick={() => chooseHandedness("left")}>左手</button>
+                      <button type="button" className={writingLayout.handedness === "right" ? "active" : ""} aria-pressed={writingLayout.handedness === "right"} onClick={() => chooseHandedness("right")}>右手</button>
+                    </div>
+                  </div>
+                  <label className="size-setting">
+                    <span><strong>田字格大小</strong><small>{Math.round(writingLayout.size)} 像素</small></span>
+                    <input
+                      type="range"
+                      min="220"
+                      max="380"
+                      step="10"
+                      value={writingLayout.size}
+                      aria-label="田字格大小"
+                      onChange={(event) => setWritingLayout((value) => ({ ...value, size: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <button
+                    className="adjust-grid-button"
+                    type="button"
+                    onClick={() => {
+                      setMobileSheet(null);
+                      setLayoutEditing(true);
+                    }}
+                  >
+                    <span><strong>調整田字格位置</strong><small>拖動格子，從下角調整大小</small></span><b aria-hidden="true">調整 →</b>
+                  </button>
                   <button type="button" onClick={() => setGuide((value) => !value)}>
                     <span><strong>淡墨字形</strong><small>在格中顯示參考字形</small></span><i className={guide ? "toggle on" : "toggle"} />
                   </button>

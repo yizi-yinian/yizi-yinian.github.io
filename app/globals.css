@@ -770,6 +770,17 @@ button:focus-visible {
   background: rgba(164,71,62,.5);
 }
 
+.grid-workspace,
+.grid-positioner {
+  position: relative;
+  width: 100%;
+}
+
+.layout-edit-toolbar,
+.grid-edit-overlay {
+  display: none;
+}
+
 .writing-grid {
   position: relative;
   aspect-ratio: 1;
@@ -1241,12 +1252,12 @@ button:focus-visible {
   .left-panel,
   .right-panel { display: none; }
   .writing-stage {
-    min-height: calc(100vh - 62px);
-    padding: 0 0 calc(82px + env(safe-area-inset-bottom));
+    min-height: calc(100dvh - 62px);
+    padding: 0 0 calc(63px + env(safe-area-inset-bottom));
     background: var(--paper);
   }
   .paper {
-    min-height: calc(100vh - 62px);
+    min-height: 0;
     padding: 18px 17px 26px;
     border: 0;
     border-radius: 0;
@@ -1270,10 +1281,85 @@ button:focus-visible {
     display: block;
     padding: 12px 0 7px;
   }
-  .writer-column { width: min(100%, 380px); margin: 0 auto; }
+  .writer-column { width: 100%; margin: 0 auto; }
   .round-button { display: none; }
   .character-meta { height: 27px; }
-  .writing-grid { width: min(calc(100vw - 34px), 380px); margin: 0 auto; }
+  .grid-workspace {
+    width: 100%;
+    height: calc(min(var(--writing-grid-size), calc(100vw - 34px)) + var(--writing-grid-y));
+  }
+  .grid-positioner {
+    position: absolute;
+    top: var(--writing-grid-y);
+    left: var(--writing-grid-x);
+    width: min(var(--writing-grid-size), 100%);
+    transform: translateX(var(--writing-grid-shift));
+    transition: top .2s ease, left .2s ease, width .2s ease, transform .2s ease;
+  }
+  .layout-editing .grid-positioner { transition: none; }
+  .writing-grid { width: 100%; margin: 0; }
+  .layout-edit-toolbar {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-bottom: 4px;
+    color: #777d76;
+    font-size: 9px;
+  }
+  .layout-edit-toolbar span { margin-right: auto; }
+  .layout-edit-toolbar button {
+    min-height: 30px;
+    padding: 0 11px;
+    border: 1px solid rgba(164,71,62,.2);
+    border-radius: 99px;
+    background: rgba(255,255,255,.55);
+    color: var(--vermilion-dark);
+    font-size: 9px;
+  }
+  .layout-edit-toolbar button.done {
+    border-color: var(--vermilion);
+    background: var(--vermilion);
+    color: #fff9ee;
+  }
+  .grid-edit-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--vermilion);
+    background: rgba(248,245,237,.42);
+    touch-action: none;
+    cursor: grab;
+  }
+  .grid-edit-overlay:active { cursor: grabbing; }
+  .drag-cue {
+    padding: 7px 12px;
+    border-radius: 99px;
+    background: rgba(42,51,44,.78);
+    color: white;
+    font-size: 10px;
+    letter-spacing: .08em;
+    pointer-events: none;
+  }
+  .resize-handle {
+    position: absolute;
+    bottom: -13px;
+    z-index: 7;
+    width: 46px;
+    height: 46px;
+    border: 2px solid #fff9ee;
+    border-radius: 50%;
+    background: var(--vermilion);
+    box-shadow: 0 4px 14px rgba(57,52,42,.22);
+    color: white;
+    font-size: 18px;
+    touch-action: none;
+  }
+  .resize-handle.left { left: -13px; transform: scaleX(-1); }
+  .resize-handle.right { right: -13px; }
   .feedback { height: 28px; margin-top: 8px; }
   .writing-tools { gap: 7px; }
   .tool {
@@ -1429,7 +1515,7 @@ button:focus-visible {
   }
 
   .setting-list { padding-top: 5px; }
-  .setting-list button {
+  .setting-list > button {
     width: 100%;
     min-height: 66px;
     display: flex;
@@ -1440,10 +1526,61 @@ button:focus-visible {
     background: transparent;
     text-align: left;
   }
+  .layout-setting,
+  .size-setting {
+    width: 100%;
+    min-height: 66px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid rgba(53,66,56,.07);
+  }
   .setting-list strong,
   .setting-list small { display: block; }
   .setting-list strong { font-family: var(--serif); font-size: 14px; }
   .setting-list small { margin-top: 4px; color: #999b94; font-size: 9px; }
+  .handedness-control {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 3px;
+    border-radius: 8px;
+    background: rgba(53,66,56,.07);
+  }
+  .handedness-control button {
+    min-width: 54px;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #83877f;
+    font-size: 10px;
+  }
+  .handedness-control button.active {
+    background: #fff;
+    box-shadow: 0 1px 5px rgba(38,49,42,.11);
+    color: var(--vermilion-dark);
+  }
+  .size-setting input {
+    width: min(42vw, 170px);
+    accent-color: var(--vermilion);
+  }
+  .setting-list > .adjust-grid-button {
+    min-height: 58px;
+    margin: 10px 0 4px;
+    padding: 0 14px;
+    border: 1px solid rgba(164,71,62,.2);
+    border-radius: 8px;
+    background: rgba(164,71,62,.055);
+  }
+  .adjust-grid-button b {
+    flex: 0 0 auto;
+    color: var(--vermilion-dark);
+    font-size: 10px;
+    font-weight: 600;
+  }
   .toggle {
     position: relative;
     width: 38px;
