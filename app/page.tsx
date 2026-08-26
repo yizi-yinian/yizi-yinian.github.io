@@ -44,14 +44,28 @@ type SavedPreferences = {
   writingLayout: WritingLayout;
 };
 
+type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 type LayoutGesture = {
   mode: "move" | "resize";
+  corner?: ResizeCorner;
   pointerId: number;
   startClientX: number;
   startClientY: number;
   startLayout: WritingLayout;
   workspaceWidth: number;
 };
+
+const RESIZE_CORNERS: ReadonlyArray<{
+  corner: ResizeCorner;
+  label: string;
+  symbol: string;
+}> = [
+  { corner: "top-left", label: "從左上角調整田字格大小", symbol: "↖" },
+  { corner: "top-right", label: "從右上角調整田字格大小", symbol: "↗" },
+  { corner: "bottom-left", label: "從左下角調整田字格大小", symbol: "↙" },
+  { corner: "bottom-right", label: "從右下角調整田字格大小", symbol: "↘" },
+];
 
 function writingLayoutPreset(handedness: Handedness): WritingLayout {
   return {
@@ -441,6 +455,7 @@ export default function Home() {
   const beginLayoutGesture = (
     mode: LayoutGesture["mode"],
     event: ReactPointerEvent<HTMLElement>,
+    corner?: ResizeCorner,
   ) => {
     if (!layoutEditing || !gridWorkspace.current) return;
     event.preventDefault();
@@ -448,6 +463,7 @@ export default function Home() {
     event.currentTarget.setPointerCapture(event.pointerId);
     layoutGesture.current = {
       mode,
+      corner,
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -475,14 +491,39 @@ export default function Home() {
       return;
     }
 
-    const horizontalDelta = gesture.startLayout.handedness === "left" ? -deltaX : deltaX;
-    const resizeDelta = Math.abs(horizontalDelta) > Math.abs(deltaY) ? horizontalDelta : deltaY;
+    const corner = gesture.corner ?? "bottom-right";
+    const startsAtLeft = corner.endsWith("left");
+    const startsAtTop = corner.startsWith("top");
+    const horizontalDelta = startsAtLeft ? -deltaX : deltaX;
+    const verticalDelta = startsAtTop ? -deltaY : deltaY;
+    const resizeDelta = Math.abs(horizontalDelta) > Math.abs(verticalDelta)
+      ? horizontalDelta
+      : verticalDelta;
+    const startSize = Math.min(gesture.startLayout.size, gesture.workspaceWidth);
+    const startTravel = Math.max(0, gesture.workspaceWidth - startSize);
+    const startLeft = gesture.startLayout.x * startTravel;
+    const horizontalAnchorLimit = startsAtLeft
+      ? startLeft + startSize
+      : gesture.workspaceWidth - startLeft;
+    const verticalAnchorLimit = startsAtTop
+      ? gesture.startLayout.y + startSize
+      : 380;
+    const minimumSize = Math.min(220, gesture.workspaceWidth);
+    const maximumSize = Math.max(
+      minimumSize,
+      Math.min(380, gesture.workspaceWidth, horizontalAnchorLimit, verticalAnchorLimit),
+    );
+    const size = Math.max(minimumSize, Math.min(maximumSize, startSize + resizeDelta));
+    const left = startsAtLeft ? startLeft + startSize - size : startLeft;
+    const top = startsAtTop
+      ? Math.max(0, Math.min(140, gesture.startLayout.y + startSize - size))
+      : gesture.startLayout.y;
+    const travel = Math.max(0, gesture.workspaceWidth - size);
     setWritingLayout({
       ...gesture.startLayout,
-      size: Math.max(
-        220,
-        Math.min(Math.min(380, gesture.workspaceWidth), gesture.startLayout.size + resizeDelta),
-      ),
+      size,
+      x: travel > 0 ? Math.max(0, Math.min(1, left / travel)) : 0.5,
+      y: top,
     });
   };
 
@@ -866,15 +907,18 @@ export default function Home() {
                       onPointerCancel={endLayoutGesture}
                     >
                       <span className="drag-cue">按住拖動</span>
-                      <button
-                        className={`resize-handle ${writingLayout.handedness}`}
-                        type="button"
-                        aria-label="拖動以調整田字格大小"
-                        onPointerDown={(event) => beginLayoutGesture("resize", event)}
-                        onPointerMove={updateLayoutGesture}
-                        onPointerUp={endLayoutGesture}
-                        onPointerCancel={endLayoutGesture}
-                      >↗</button>
+                      {RESIZE_CORNERS.map(({ corner, label, symbol }) => (
+                        <button
+                          className={`resize-handle ${corner}`}
+                          key={corner}
+                          type="button"
+                          aria-label={label}
+                          onPointerDown={(event) => beginLayoutGesture("resize", event, corner)}
+                          onPointerMove={updateLayoutGesture}
+                          onPointerUp={endLayoutGesture}
+                          onPointerCancel={endLayoutGesture}
+                        >{symbol}</button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -991,7 +1035,7 @@ export default function Home() {
                       setLayoutEditing(true);
                     }}
                   >
-                    <span><strong>調整田字格位置</strong><small>拖動格子，從下角調整大小</small></span><b aria-hidden="true">調整 →</b>
+                    <span><strong>調整田字格位置</strong><small>拖動格子，從四角調整大小</small></span><b aria-hidden="true">調整 →</b>
                   </button>
                   <button type="button" onClick={() => setGuide((value) => !value)}>
                     <span><strong>淡墨字形</strong><small>在格中顯示參考字形</small></span><i className={guide ? "toggle on" : "toggle"} />

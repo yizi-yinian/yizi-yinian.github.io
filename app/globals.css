@@ -846,14 +846,15 @@ button:focus-visible {
 
 .writer-mount svg {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
 }
 
 .freehand-writer {
   position: absolute;
   inset: 0;
   z-index: 1;
+  container-type: inline-size;
 }
 
 .freehand-writer canvas {
@@ -873,7 +874,7 @@ button:focus-visible {
   place-items: center;
   color: #c9c1b1;
   font-family: var(--serif);
-  font-size: clamp(190px, 27vw, 270px);
+  font-size: 72cqi;
   line-height: 1;
   opacity: .72;
   pointer-events: none;
@@ -1346,7 +1347,6 @@ button:focus-visible {
   }
   .resize-handle {
     position: absolute;
-    bottom: -13px;
     z-index: 7;
     width: 46px;
     height: 46px;
@@ -1358,8 +1358,10 @@ button:focus-visible {
     font-size: 18px;
     touch-action: none;
   }
-  .resize-handle.left { left: -13px; transform: scaleX(-1); }
-  .resize-handle.right { right: -13px; }
+  .resize-handle.top-left { top: -13px; left: -13px; }
+  .resize-handle.top-right { top: -13px; right: -13px; }
+  .resize-handle.bottom-left { bottom: -13px; left: -13px; }
+  .resize-handle.bottom-right { right: -13px; bottom: -13px; }
   .feedback { height: 28px; margin-top: 8px; }
   .writing-tools { gap: 7px; }
   .tool {
