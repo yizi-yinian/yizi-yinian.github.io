@@ -10,14 +10,14 @@ const githubPagesUrl = githubOwner && githubRepository
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? githubPagesUrl),
-  title: "一字一念 · 佛經抄寫",
-  description: "安靜、專注的在線佛經抄寫體驗。",
+  title: "一字一念 · 佛經讀寫",
+  description: "安靜、專注的在線佛經閱讀與抄寫體驗。",
   openGraph: {
     title: "一字一念",
-    description: "金剛經・心經・手機抄寫",
+    description: "金剛經・心經・手機讀寫",
     locale: "zh_Hant",
     type: "website",
-    images: [{ url: "og-image.png", width: 1200, height: 630, alt: "一字一念・佛經手機抄寫" }],
+    images: [{ url: "og-image.png", width: 1200, height: 630, alt: "一字一念・佛經手機讀寫" }],
   },
 };
 

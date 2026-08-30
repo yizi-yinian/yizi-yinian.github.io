@@ -11,6 +11,13 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import hanziWriterCoverage from "@/app/data/hanzi-writer-coverage.json";
+import ReaderScreen from "@/app/reader";
+import {
+  SUTRA_AUDIO_TRACKS,
+  normalizeReadingProgress,
+  type SavedReadingLibrary,
+  type SavedReadingProgress,
+} from "@/app/lib/reading";
 import {
   diamondSutra,
   getCompletedSectionCount,
@@ -25,6 +32,7 @@ import {
 const STORAGE_KEY = "yizi-yinian-progress-v2";
 const LEGACY_STORAGE_KEY = "yizi-yinian-progress-v1";
 const PREFERENCES_STORAGE_KEY = "yizi-yinian-preferences-v1";
+const READING_STORAGE_KEY = "yizi-yinian-reading-v1";
 const FREEHAND_FALLBACK = new Set(hanziWriterCoverage.freehandFallback);
 
 type Handedness = "left" | "right";
@@ -267,10 +275,18 @@ function FreehandWriter({ character, guide, resetVersion, onComplete }: Freehand
 type LibrarySutraCardProps = {
   scripture: Sutra;
   progress?: SavedProgress;
-  onStart: (scriptureId: string) => void;
+  readingProgress?: SavedReadingProgress;
+  onRead: (scriptureId: string) => void;
+  onWrite: (scriptureId: string) => void;
 };
 
-function LibrarySutraCard({ scripture, progress, onStart }: LibrarySutraCardProps) {
+function LibrarySutraCard({
+  scripture,
+  progress,
+  readingProgress,
+  onRead,
+  onWrite,
+}: LibrarySutraCardProps) {
   const presentation = SUTRA_PRESENTATION[scripture.id];
   const normalized = normalizeProgress(progress, scripture);
   const completedSet = new Set(normalized.completedIndices);
@@ -308,9 +324,14 @@ function LibrarySutraCard({ scripture, progress, onStart }: LibrarySutraCardProp
             尚未開始 · {scripture.sections.length === 1 ? "從卷首起抄" : `從第一${scripture.sectionUnit}起抄`}
           </div>
         )}
-        <button className="start-writing" type="button" onClick={() => onStart(scripture.id)}>
-          {copiedCount > 0 ? "繼續抄寫" : "開始抄寫"}<span>→</span>
-        </button>
+        <div className="book-actions">
+          <button className="start-reading" type="button" onClick={() => onRead(scripture.id)}>
+            {readingProgress?.updatedAt ? "繼續讀經" : "開始讀經"}
+          </button>
+          <button className="start-writing" type="button" onClick={() => onWrite(scripture.id)}>
+            {copiedCount > 0 ? "繼續抄寫" : "開始抄寫"}<span>→</span>
+          </button>
+        </div>
         <a
           className="source-credit"
           href={scripture.source.url}
@@ -328,8 +349,10 @@ export default function Home() {
   const writer = useRef<HanziWriter | null>(null);
   const advanceTimer = useRef<number | undefined>(undefined);
   const layoutGesture = useRef<LayoutGesture | null>(null);
+  const readingProgressRef = useRef<Record<string, SavedReadingProgress>>({});
   const [activeScriptureId, setActiveScriptureId] = useState(diamondSutra.id);
   const [progressByScripture, setProgressByScripture] = useState<Record<string, SavedProgress>>({});
+  const [readingProgressByScripture, setReadingProgressByScripture] = useState<Record<string, SavedReadingProgress>>({});
   const [resetVersion, setResetVersion] = useState(0);
   const [guide, setGuide] = useState(true);
   const [gentleHints, setGentleHints] = useState(true);
@@ -338,7 +361,7 @@ export default function Home() {
   const [layoutEditing, setLayoutEditing] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<"chapters" | "progress" | "settings" | null>(null);
   const [feedback, setFeedback] = useState("依照淡墨字形，緩緩落筆");
-  const [screen, setScreen] = useState<"library" | "writing">("library");
+  const [screen, setScreen] = useState<"library" | "reading" | "writing">("library");
   const [storageReady, setStorageReady] = useState(false);
 
   const scripture = sutras.find((item) => item.id === activeScriptureId) ?? diamondSutra;
@@ -347,6 +370,10 @@ export default function Home() {
   const activeProgress = useMemo(
     () => progressByScripture[scripture.id] ?? emptyProgress(scripture.id),
     [progressByScripture, scripture.id],
+  );
+  const activeReadingProgress = useMemo(
+    () => normalizeReadingProgress(readingProgressByScripture[scripture.id], scripture.id),
+    [readingProgressByScripture, scripture.id],
   );
   const characterIndex = activeProgress.characterIndex;
   const seconds = activeProgress.elapsedSeconds;
@@ -395,6 +422,37 @@ export default function Home() {
     },
     [scripture],
   );
+
+  const updateReadingProgress = useCallback(
+    (scriptureId: string, patch: Partial<SavedReadingProgress>) => {
+      const values = readingProgressRef.current;
+      const current = normalizeReadingProgress(values[scriptureId], scriptureId);
+      const next = {
+        ...values,
+        [scriptureId]: {
+          ...current,
+          ...patch,
+          scriptureId,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      readingProgressRef.current = next;
+      setReadingProgressByScripture(next);
+    },
+    [],
+  );
+
+  const persistReadingProgress = useCallback(() => {
+    const library: SavedReadingLibrary = {
+      version: 1,
+      progresses: readingProgressRef.current,
+    };
+    try {
+      window.localStorage.setItem(READING_STORAGE_KEY, JSON.stringify(library));
+    } catch {
+      // Reading remains available when local storage is unavailable.
+    }
+  }, []);
 
   const moveTo = useCallback((nextIndex: number) => {
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
@@ -564,6 +622,28 @@ export default function Home() {
       }
 
       try {
+        const savedReading = window.localStorage.getItem(READING_STORAGE_KEY);
+        const readingLibrary = savedReading
+          ? JSON.parse(savedReading) as Partial<SavedReadingLibrary>
+          : null;
+        if (readingLibrary?.version === 1 && readingLibrary.progresses) {
+          const restoredReading: Record<string, SavedReadingProgress> = {};
+          for (const item of sutras) {
+            if (readingLibrary.progresses[item.id]) {
+              restoredReading[item.id] = normalizeReadingProgress(
+                readingLibrary.progresses[item.id],
+                item.id,
+              );
+            }
+          }
+          readingProgressRef.current = restoredReading;
+          setReadingProgressByScripture(restoredReading);
+        }
+      } catch {
+        // Reading progress is optional and can safely restart at the beginning.
+      }
+
+      try {
         const savedPreferences = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
         const preferences = savedPreferences
           ? JSON.parse(savedPreferences) as Partial<SavedPreferences>
@@ -603,6 +683,19 @@ export default function Home() {
       // Storage is an enhancement, never a blocker for the writing surface.
     }
   }, [progressByScripture, scripture.id, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const library: SavedReadingLibrary = {
+      version: 1,
+      progresses: readingProgressByScripture,
+    };
+    try {
+      window.localStorage.setItem(READING_STORAGE_KEY, JSON.stringify(library));
+    } catch {
+      // Reading remains available when local storage is unavailable.
+    }
+  }, [readingProgressByScripture, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -703,6 +796,14 @@ export default function Home() {
     setScreen("writing");
   };
 
+  const openReader = (scriptureId: string) => {
+    const nextScripture = sutras.find((item) => item.id === scriptureId) ?? diamondSutra;
+    if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
+    setActiveScriptureId(nextScripture.id);
+    setMobileSheet(null);
+    setScreen("reading");
+  };
+
   const demonstrate = () => {
     if (usesFreehandFallback) {
       setFeedback("此異體字暫無筆順校驗，請依淡墨字形書寫");
@@ -725,7 +826,7 @@ export default function Home() {
         <header className="library-topbar">
           <div className="brand-lockup">
             <span className="seal" aria-hidden="true">寫<br />經</span>
-            <div><strong>一字一念</strong><span>靜心抄經</span></div>
+            <div><strong>一字一念</strong><span>靜心讀寫</span></div>
           </div>
           <button
             className="library-history"
@@ -739,8 +840,8 @@ export default function Home() {
 
         <section className="library-intro">
           <span className="eyebrow">心靜，則字靜</span>
-          <h1>選一部經，<br />安靜地寫一會兒</h1>
-          <p>不用趕進度。每一次落筆，都會自動保存在這臺設備上。</p>
+          <h1>選一部經，<br />安靜地讀，<br />慢慢地寫</h1>
+          <p>不用趕進度。讀到哪裡、寫到哪裡，都會自動保存在這臺設備上。</p>
         </section>
 
         <section className="scripture-shelf" aria-label="選擇經文">
@@ -749,7 +850,9 @@ export default function Home() {
               key={item.id}
               scripture={item}
               progress={progressByScripture[item.id]}
-              onStart={openScripture}
+              readingProgress={readingProgressByScripture[item.id]}
+              onRead={openReader}
+              onWrite={openScripture}
             />
           ))}
           <article className="scripture-card upcoming">
@@ -758,8 +861,23 @@ export default function Home() {
           </article>
         </section>
 
-        <footer className="library-footer"><span>所有進度僅保存在本機</span><i />無需登錄，也不上傳抄寫內容</footer>
+        <footer className="library-footer"><span>所有進度僅保存在本機</span><i />無需登錄，也不上傳讀寫內容</footer>
       </main>
+    );
+  }
+
+  if (screen === "reading") {
+    return (
+      <ReaderScreen
+        key={scripture.id}
+        scripture={scripture}
+        progress={activeReadingProgress}
+        tracks={SUTRA_AUDIO_TRACKS[scripture.id] ?? []}
+        onProgressChange={(patch) => updateReadingProgress(scripture.id, patch)}
+        onPersist={persistReadingProgress}
+        onBack={() => setScreen("library")}
+        onWrite={() => openScripture(scripture.id)}
+      />
     );
   }
 
@@ -768,7 +886,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand-lockup brand-button" type="button" onClick={() => setScreen("library")} aria-label="返回選經首頁">
           <span className="seal" aria-hidden="true">寫<br />經</span>
-          <div><strong>一字一念</strong><span>靜心抄經</span></div>
+          <div><strong>一字一念</strong><span>靜心讀寫</span></div>
         </button>
 
         <div className="mobile-title">
