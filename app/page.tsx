@@ -334,7 +334,6 @@ export default function Home() {
   const [guide, setGuide] = useState(true);
   const [gentleHints, setGentleHints] = useState(true);
   const [autoAdvance, setAutoAdvance] = useState(true);
-  const [focusMode, setFocusMode] = useState(false);
   const [writingLayout, setWritingLayout] = useState<WritingLayout>(() => writingLayoutPreset("right"));
   const [layoutEditing, setLayoutEditing] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<"chapters" | "progress" | "settings" | null>(null);
@@ -343,7 +342,6 @@ export default function Home() {
   const [storageReady, setStorageReady] = useState(false);
 
   const scripture = sutras.find((item) => item.id === activeScriptureId) ?? diamondSutra;
-  const presentation = SUTRA_PRESENTATION[scripture.id];
   const characters = useMemo(() => getSutraCharacters(scripture), [scripture]);
   const totalCharacters = characters.length;
   const activeProgress = useMemo(
@@ -362,17 +360,6 @@ export default function Home() {
   const completedSet = useMemo(() => new Set(completedIndices), [completedIndices]);
   const copiedCount = completedSet.size;
   const sutraProgress = Math.round((copiedCount / totalCharacters) * 100);
-  const currentSectionCompleted = useMemo(
-    () =>
-      Array.from(
-        { length: currentSection.characterCount },
-        (_, index) => currentSection.startIndex + index,
-      ).filter((index) => completedSet.has(index)).length,
-    [completedSet, currentSection],
-  );
-  const currentSectionProgress = Math.round(
-    (currentSectionCompleted / currentSection.characterCount) * 100,
-  );
   const completedSectionCount = useMemo(
     () => getCompletedSectionCount(scripture, completedSet),
     [completedSet, scripture],
@@ -634,15 +621,6 @@ export default function Home() {
   }, [autoAdvance, gentleHints, guide, storageReady, writingLayout]);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") moveTo(characterIndex - 1);
-      if (event.key === "ArrowRight") moveTo(characterIndex + 1);
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [characterIndex, moveTo]);
-
-  useEffect(() => {
     const mount = writerMount.current;
     if (!mount || !currentCharacter || screen !== "writing" || usesFreehandFallback) return;
 
@@ -786,7 +764,7 @@ export default function Home() {
   }
 
   return (
-    <main className={focusMode ? "app-shell focus-mode" : "app-shell"}>
+    <main className="app-shell">
       <header className="topbar">
         <button className="brand-lockup brand-button" type="button" onClick={() => setScreen("library")} aria-label="返回選經首頁">
           <span className="seal" aria-hidden="true">寫<br />經</span>
@@ -798,49 +776,8 @@ export default function Home() {
           <span>{sectionLabel(scripture, currentSection)} · {formatTime(seconds)}</span>
         </div>
 
-        <div className="session-pill" aria-label={`累計抄寫 ${formatTime(seconds)}`}>
-          <span className="breath-dot" aria-hidden="true" />
-          <span>累計抄寫</span>
-          <strong>{formatTime(seconds)}</strong>
-        </div>
-
-        <button className="focus-button" type="button" aria-pressed={focusMode} onClick={() => setFocusMode((value) => !value)}>
-          <span aria-hidden="true">◐</span>{focusMode ? "退出靜心" : "靜心模式"}
-        </button>
+        <button className="topbar-action" type="button" onClick={() => setScreen("library")}>完成</button>
       </header>
-
-      <aside className="left-panel" aria-label="經文章節">
-        <div className="sutra-heading">
-          <span className="eyebrow">{scripture.translator}</span>
-          <h1>{presentation.coverLines[0]}<br />{presentation.coverLines[1]}</h1>
-          <div className="title-rule" />
-          <p>全經{scripture.sections.length}{scripture.sectionUnit} · 正文 {scripture.characterCount.toLocaleString("zh-Hant")} 字</p>
-        </div>
-
-        <nav className="section-list" aria-label="章節">
-          {scripture.sections.map((section) => {
-            const active = section.id === currentSection.id;
-            const status = getSectionStatus(section, completedSet, characterIndex);
-            return (
-              <button
-                className={`section${active ? " active" : ""}${status === "已完成" ? " done" : ""}`}
-                key={section.id}
-                type="button"
-                onClick={() => openSection(section)}
-              >
-                <span className="section-number">{String(section.id).padStart(2, "0")}</span>
-                <span><strong>{section.title}</strong><small>{status}</small></span>
-                {active && <span className="section-mark" aria-hidden="true" />}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="daily-verse">
-          <span>今日一偈</span>
-          <p>{presentation.verse[0]}<br />{presentation.verse[1]}</p>
-        </div>
-      </aside>
 
       <section className="writing-stage" aria-label="抄寫區">
         <div className="paper">
@@ -937,34 +874,7 @@ export default function Home() {
             <button type="button" className="tool" onClick={() => setResetVersion((value) => value + 1)}><span aria-hidden="true">↺</span>重寫</button>
           </div>
         </div>
-        <p className="keyboard-note">可用左右方向鍵切換字 · 書寫完成後自動保存</p>
       </section>
-
-      <aside className="right-panel" aria-label="抄寫進度">
-        <section className="progress-card">
-          <div className="card-title"><span>全經進度</span><span>{completedSectionCount} / {scripture.sections.length} {scripture.sectionUnit}</span></div>
-          <div className="progress-ring" style={{ "--progress": `${sutraProgress}%` } as CSSProperties}>
-            <div><strong>{sutraProgress}%</strong><span>{copiedCount} / {totalCharacters} 字</span></div>
-          </div>
-          <p>累計靜心抄寫 <strong>{formatTime(seconds)}</strong></p>
-          <div className="progress-track"><span style={{ width: `${sutraProgress}%` }} /></div>
-          <small>{sectionLabel(scripture, currentSection)}已完成 {currentSectionProgress}%</small>
-        </section>
-
-        <section className="guidance-card">
-          <span className="eyebrow">書寫提示</span>
-          <h3>慢一點，也很好</h3>
-          <p>抄經不求快。每寫完一個字，停一息，再落下一筆。</p>
-          <div className="breathing-line"><span /><span /><span /></div>
-        </section>
-
-        <section className="session-card">
-          <div><span>當前章節</span><strong>{currentSection.id} / {scripture.sections.length} {scripture.sectionUnit}</strong></div>
-          <div><span>本{scripture.sectionUnit}完成</span><strong>{currentSectionCompleted} / {currentSection.characterCount}</strong></div>
-        </section>
-
-        <button className="finish-button" type="button" onClick={() => setScreen("library")}>完成本次抄寫</button>
-      </aside>
 
       <nav className="mobile-tabbar" aria-label="主要導航">
         <button type="button" onClick={() => setMobileSheet("chapters")}><span aria-hidden="true">冊</span>目錄</button>
