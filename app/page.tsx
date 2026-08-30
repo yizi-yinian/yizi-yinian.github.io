@@ -33,7 +33,26 @@ const STORAGE_KEY = "yizi-yinian-progress-v2";
 const LEGACY_STORAGE_KEY = "yizi-yinian-progress-v1";
 const PREFERENCES_STORAGE_KEY = "yizi-yinian-preferences-v1";
 const READING_STORAGE_KEY = "yizi-yinian-reading-v1";
+const VIEW_STORAGE_KEY = "yizi-yinian-view-v1";
 const FREEHAND_FALLBACK = new Set(hanziWriterCoverage.freehandFallback);
+
+type AppScreen = "library" | "reading" | "writing";
+type MobileSheet = "chapters" | "progress" | "settings" | null;
+
+type SavedView = {
+  version: 1;
+  screen: AppScreen;
+  activeScriptureId: string;
+  mobileSheet: MobileSheet;
+};
+
+function isAppScreen(value: unknown): value is AppScreen {
+  return value === "library" || value === "reading" || value === "writing";
+}
+
+function isMobileSheet(value: unknown): value is Exclude<MobileSheet, null> {
+  return value === "chapters" || value === "progress" || value === "settings";
+}
 
 type Handedness = "left" | "right";
 
@@ -79,7 +98,7 @@ function writingLayoutPreset(handedness: Handedness): WritingLayout {
   return {
     handedness,
     size: 320,
-    x: handedness === "left" ? 0 : 1,
+    x: 0.5,
     y: 24,
   };
 }
@@ -346,6 +365,7 @@ function LibrarySutraCard({
 export default function Home() {
   const writerMount = useRef<HTMLDivElement>(null);
   const gridWorkspace = useRef<HTMLDivElement>(null);
+  const sourceStrip = useRef<HTMLDivElement>(null);
   const writer = useRef<HanziWriter | null>(null);
   const advanceTimer = useRef<number | undefined>(undefined);
   const layoutGesture = useRef<LayoutGesture | null>(null);
@@ -359,9 +379,9 @@ export default function Home() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [writingLayout, setWritingLayout] = useState<WritingLayout>(() => writingLayoutPreset("right"));
   const [layoutEditing, setLayoutEditing] = useState(false);
-  const [mobileSheet, setMobileSheet] = useState<"chapters" | "progress" | "settings" | null>(null);
+  const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null);
   const [feedback, setFeedback] = useState("依照淡墨字形，緩緩落筆");
-  const [screen, setScreen] = useState<"library" | "reading" | "writing">("library");
+  const [screen, setScreen] = useState<AppScreen>("library");
   const [storageReady, setStorageReady] = useState(false);
 
   const scripture = sutras.find((item) => item.id === activeScriptureId) ?? diamondSutra;
@@ -589,9 +609,18 @@ export default function Home() {
 
   useEffect(() => {
     const restoreFrame = window.requestAnimationFrame(() => {
+      let savedView: Partial<SavedView> | null = null;
+      try {
+        const saved = window.sessionStorage.getItem(VIEW_STORAGE_KEY);
+        savedView = saved ? JSON.parse(saved) as Partial<SavedView> : null;
+      } catch {
+        // Session storage is optional; fall back to the library.
+      }
+
       try {
         const saved = window.localStorage.getItem(STORAGE_KEY);
         const library = saved ? JSON.parse(saved) as SavedLibrary : null;
+        const restoredView = savedView?.version === 1 ? savedView : null;
         const restored: Record<string, SavedProgress> = {};
         for (const item of sutras) {
           if (library?.version === 2 && library.progresses?.[item.id]) {
@@ -608,7 +637,8 @@ export default function Home() {
         }
 
         setProgressByScripture(restored);
-        const restoredScripture = sutras.find((item) => item.id === library?.activeScriptureId)
+        const restoredScripture = sutras.find((item) => item.id === restoredView?.activeScriptureId)
+          ?? sutras.find((item) => item.id === library?.activeScriptureId)
           ?? sutras
             .filter((item) => restored[item.id]?.updatedAt)
             .sort((left, right) => restored[right.id].updatedAt.localeCompare(restored[left.id].updatedAt))[0]
@@ -657,6 +687,16 @@ export default function Home() {
       } catch {
         // Ignore damaged or unavailable preference storage and keep safe defaults.
       }
+
+      const restoredScreen = savedView?.version === 1 && isAppScreen(savedView.screen)
+        ? savedView.screen
+        : "library";
+      setScreen(restoredScreen);
+      setMobileSheet(
+        restoredScreen === "writing" && isMobileSheet(savedView?.mobileSheet)
+          ? savedView.mobileSheet
+          : null,
+      );
       setStorageReady(true);
     });
     return () => window.cancelAnimationFrame(restoreFrame);
@@ -669,6 +709,31 @@ export default function Home() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [screen, updateActiveProgress]);
+
+  useEffect(() => {
+    if (screen !== "writing" || !sourceStrip.current) return;
+    const strip = sourceStrip.current;
+    const centerCurrentCharacter = () => {
+      const current = strip.querySelector<HTMLElement>('[aria-current="true"]');
+      if (!current) return;
+      const stripRect = strip.getBoundingClientRect();
+      const currentRect = current.getBoundingClientRect();
+      strip.scrollTo({
+        left: strip.scrollLeft
+          + currentRect.left
+          - stripRect.left
+          - (strip.clientWidth - currentRect.width) / 2,
+        behavior: "auto",
+      });
+    };
+    const frame = window.requestAnimationFrame(centerCurrentCharacter);
+    const resizeObserver = new ResizeObserver(centerCurrentCharacter);
+    resizeObserver.observe(strip);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
+  }, [characterIndex, screen, sourceWindowStart]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -696,6 +761,21 @@ export default function Home() {
       // Reading remains available when local storage is unavailable.
     }
   }, [readingProgressByScripture, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    const view: SavedView = {
+      version: 1,
+      screen,
+      activeScriptureId: scripture.id,
+      mobileSheet: screen === "writing" ? mobileSheet : null,
+    };
+    try {
+      window.sessionStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(view));
+    } catch {
+      // The app still works when session storage is unavailable.
+    }
+  }, [mobileSheet, screen, scripture.id, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -904,7 +984,7 @@ export default function Home() {
             <span className="page-count">第 {characterIndex + 1} / {totalCharacters} 字</span>
           </div>
 
-          <div className="source-strip" aria-label="經文原文">
+          <div className="source-strip" ref={sourceStrip} aria-label="經文原文">
             {sourceWindowStart > 0 && <span className="source-more">…</span>}
             {sourceCharacters.map((character, index) => {
               const globalIndex = sourceWindowStart + index;
@@ -914,6 +994,7 @@ export default function Home() {
                   key={`${character}-${globalIndex}`}
                   className={`source-character${globalIndex === characterIndex ? " current" : ""}${completedSet.has(globalIndex) ? " complete" : ""}`}
                   onClick={() => moveTo(globalIndex)}
+                  aria-current={globalIndex === characterIndex ? "true" : undefined}
                   aria-label={`跳到第 ${globalIndex + 1} 字，${character}`}
                 >{character}</button>
               );
@@ -925,7 +1006,6 @@ export default function Home() {
             <button className="round-button previous" type="button" onClick={() => moveTo(characterIndex - 1)} aria-label="上一個字">←</button>
 
             <div className={`writer-column${layoutEditing ? " layout-editing" : ""}`}>
-              <div className="character-meta"><span>當前</span><strong>{currentCharacter}</strong><i aria-hidden="true" /></div>
               {layoutEditing && (
                 <div className="layout-edit-toolbar" aria-label="田字格調整工具">
                   <span>拖動格子調整位置</span>

@@ -148,7 +148,11 @@ export default function ReaderScreen({
       if (document.visibilityState === "hidden") saveSession();
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", saveSession);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", saveSession);
+    };
   }, [saveSession]);
 
   const restoreAudioPosition = () => {

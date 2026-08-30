@@ -673,11 +673,18 @@ a:focus-visible {
 
 .writing-stage {
   min-height: calc(100dvh - 62px);
+  display: flex;
+  flex-direction: column;
   padding: 0 0 calc(63px + env(safe-area-inset-bottom));
   background: var(--paper);
 }
 
-.paper { padding: 18px 17px 26px; }
+.paper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 17px 0;
+}
 
 .paper-heading {
   display: flex;
@@ -713,7 +720,7 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 2px;
+  padding: 0 calc(50% - 12.5px);
   overflow-x: auto;
   border-bottom: 1px solid rgba(80, 72, 58, .1);
   scrollbar-width: none;
@@ -753,23 +760,14 @@ a:focus-visible {
 
 .source-more { color: #a4a39b; }
 
-.practice-area { padding: 12px 0 7px; }
+.practice-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 12px 0 7px;
+}
 .writer-column { width: 100%; margin: 0 auto; }
 .round-button { display: none; }
-
-.character-meta {
-  height: 27px;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-  color: #95958d;
-  font-size: 9px;
-  letter-spacing: .14em;
-}
-
-.character-meta strong { color: var(--ink); font-family: var(--serif); font-size: 15px; }
-.character-meta i { width: 22px; height: 1px; background: rgba(164, 71, 62, .5); }
 
 .grid-workspace {
   position: relative;
@@ -999,7 +997,11 @@ a:focus-visible {
 
 .feedback span { color: var(--vermilion); font-size: 14px; }
 
-.writing-tools { display: flex; gap: 7px; margin-top: 2px; }
+.writing-tools {
+  display: flex;
+  gap: 7px;
+  margin-top: 2px;
+}
 
 .tool {
   min-width: 0;
